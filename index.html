@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#f6efe0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>CardKing 卡牌王</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🃏</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gochi+Hand&family=Patrick+Hand&family=LXGW+WenKai+TC:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 共用的蠟筆濾鏡與漸層 -->
+  <svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <!-- 蠟筆：線條微微抖動 + 顆粒狀缺口 -->
+      <filter id="crayon" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4" result="warp"/>
+        <feDisplacementMap in="SourceGraphic" in2="warp" scale="3.2" xChannelSelector="R" yChannelSelector="G" result="wobbly"/>
+        <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="9" result="grain"/>
+        <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -3.2 0 0 0 2.35" result="grainMask"/>
+        <feComposite in="wobbly" in2="grainMask" operator="in"/>
+      </filter>
+      <filter id="crayon-soft" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="2" result="warp"/>
+        <feDisplacementMap in="SourceGraphic" in2="warp" scale="2.5" xChannelSelector="R" yChannelSelector="G" result="wobbly"/>
+        <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="5" result="grain"/>
+        <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -2.2 0 0 0 1.9" result="grainMask"/>
+        <feComposite in="wobbly" in2="grainMask" operator="in"/>
+      </filter>
+      <linearGradient id="g-gold" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fff3b0"/>
+        <stop offset=".25" stop-color="#e9b526"/>
+        <stop offset=".5" stop-color="#fff0a0"/>
+        <stop offset=".75" stop-color="#c98a0c"/>
+        <stop offset="1" stop-color="#ffe680"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div id="app">
+    <header class="topbar">
+      <button class="icon-btn back" data-action="back" aria-label="返回">
+        <svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#crayon-soft)"/></svg>
+      </button>
+      <h1 class="title">卡牌王</h1>
+      <button class="icon-btn sound" data-action="sound" aria-label="音效開關">🔊</button>
+      <div class="coins" title="持有金幣">
+        <span class="coin-ring" aria-hidden="true"></span>
+        <span class="coin-ico" aria-hidden="true"></span>
+        <b id="coin-val">0</b>
+      </div>
+    </header>
+    <main id="screen"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="stage-root"></div>
+  <div id="toasts" aria-live="polite"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
