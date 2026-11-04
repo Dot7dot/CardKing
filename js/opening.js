@@ -1,5 +1,5 @@
 // 開卡包動畫：卡包飛到螢幕前 → 蓄力抖動 → 自己撕開（依稀有度發出黃光／彩虹光）→ 一張一張翻牌
-import { cardHTML, cardBackHTML, packHTML, TEAR_Y } from './crayon.js';
+import { cardHTML, cardBackHTML, packHTML, TEAR_Y, warmImages } from './crayon.js';
 import { RULES, tierOf } from './data.js';
 import { Particles, TIER_COLORS } from './particles.js';
 import { sfx } from './sfx.js';
@@ -21,6 +21,71 @@ function badgeFor(res) {
   if (res.newVariant) return '<span class="badge b-var">新型態！</span>';
   return `<span class="badge b-dup">重複 +${RULES.dupCoins}<i class="coin-ico sm"></i></span>`;
 }
+
+const RAINBOW = ['#ff4d4d', '#ffb03d', '#ffe94d', '#4cd964', '#3fa7ff', '#b05cff'];
+
+/**
+ * 光芒與光暈：只在小畫布上畫一次，之後只用 CSS 旋轉／縮放這張小圖。
+ * （之前用巨大的 conic-gradient + mask + hue-rotate，每一格都要重畫整個螢幕，是卡頓的主因）
+ */
+function raysCanvas(tier) {
+  const S = 512, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const n = tier === 'rainbow' ? 24 : 20;
+  const cols = tier === 'rainbow' ? RAINBOW : ['#ffd646', '#ffeaa0'];
+  g.translate(S / 2, S / 2);
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * Math.PI * 2;
+    g.fillStyle = cols[i % cols.length];
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.arc(0, 0, S / 2, a0, a0 + (Math.PI * 2 / n) * 0.42);
+    g.closePath();
+    g.fill();
+  }
+  fadeOut(g, S, [[0, 0.95], [0.3, 0.6], [1, 0]]);
+  return c;
+}
+
+function auraCanvas(kind) {
+  const S = 256, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.translate(S / 2, S / 2);
+  if (kind === 'rainbow') {
+    const n = 60;
+    for (let i = 0; i < n; i++) {
+      g.fillStyle = `hsl(${(i / n) * 360} 95% 62%)`;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.arc(0, 0, S / 2, (i / n) * Math.PI * 2, ((i + 1.2) / n) * Math.PI * 2);
+      g.closePath();
+      g.fill();
+    }
+    fadeOut(g, S, [[0, 1], [0.35, 0.75], [1, 0]]);
+  } else {
+    const stops = kind === 'gold'
+      ? [[0, 'rgba(255,236,140,1)'], [0.4, 'rgba(255,196,40,.45)'], [1, 'rgba(255,196,40,0)']]
+      : [[0, 'rgba(255,255,255,.5)'], [0.4, 'rgba(255,255,255,.12)'], [1, 'rgba(255,255,255,0)']];
+    const rg = g.createRadialGradient(0, 0, 0, 0, 0, S / 2);
+    for (const [o, col] of stops) rg.addColorStop(o, col);
+    g.fillStyle = rg;
+    g.fillRect(-S / 2, -S / 2, S, S);
+  }
+  return c;
+}
+
+function fadeOut(g, S, stops) {
+  g.globalCompositeOperation = 'destination-in';
+  const rg = g.createRadialGradient(0, 0, 0, 0, 0, S / 2);
+  for (const [o, a] of stops) rg.addColorStop(o, `rgba(0,0,0,${a})`);
+  g.fillStyle = rg;
+  g.fillRect(-S / 2, -S / 2, S, S);
+  g.globalCompositeOperation = 'source-over';
+}
+
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 
 function preload(urls, ms) {
   const all = Promise.all(urls.filter(Boolean).map((u) => new Promise((r) => {
@@ -55,7 +120,7 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
   const stage = htmlToEl(`<div class="stage tier-${tier}">
     <div class="stage-bg"></div>
     <div class="rays"></div>
-    <div class="aura"></div>
+    <div class="aura"><div class="aura-charge"></div><div class="aura-lit"></div></div>
     <div class="shaker">
       <div class="deck" style="width:${CW}px;height:${CH}px;left:${(vw - CW) / 2}px;top:${(vh - CH) / 2 - vh * 0.04}px"></div>
       <div class="pack-fly" style="width:${W}px;height:${H}px;left:${(vw - W) / 2}px;top:${(vh - H) / 2}px">
@@ -72,10 +137,13 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
       <div class="hint"></div>
       <button class="btn ghost skip" hidden>全部翻開 ⏩</button>
     </div>
-    <div class="tray">${results.map(() => '<div class="tray-slot"></div>').join('')}</div>
+    <div class="tray">${results.map((res) => `<div class="tray-slot ft-${tierOf(res.r)}"></div>`).join('')}</div>
   </div>`);
   root.append(stage);
   document.body.classList.add('stage-open');
+  const noScroll = (e) => e.preventDefault();
+  stage.addEventListener('touchmove', noScroll, { passive: false });
+  stage.addEventListener('wheel', noScroll, { passive: false });
   const P = new Particles($('.pcv', stage));
   const fly = $('.pack-fly', stage);
   const shake = $('.pack-shake', stage);
@@ -84,7 +152,10 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
   const deck = $('.deck', stage);
   const hint = $('.hint', stage);
   const skip = $('.skip', stage);
-  const imgs = preload(results.map((r) => r.card.imageUrl), 2500);
+  // 光芒、光暈畫一次就好
+  if (tier !== 'base') $('.rays', stage).append(raysCanvas(tier));
+  $('.aura-charge', stage).append(auraCanvas('base'));
+  $('.aura-lit', stage).append(auraCanvas(tier));
 
   // ── 1. 卡包放大浮到螢幕前 ──
   const src = sourceEl?.getBoundingClientRect();
@@ -95,11 +166,34 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
     : 'translate(0,40vh) scale(.4)';
   $('.stage-bg', stage).animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, fill: 'forwards' });
   sfx.whoosh();
-  await done(fly.animate([
+  const flyAnim = fly.animate([
     { transform: from },
     { transform: 'translate(0,-28px) scale(1.12) rotate(-4deg)', offset: 0.7 },
     { transform: 'translate(0,0) scale(1) rotate(0deg)' },
-  ], { duration: 720, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' }));
+  ], { duration: 720, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' });
+
+  // 飛行動畫交給 GPU 跑，主執行緒這時候空著：趁機把卡片建好、圖片解碼
+  // （以前是點下去那一格就全部建好，或撕開那一瞬間才建立，最容易卡）
+  // 一格只建一張，把工作分散到好幾格，不會有某一格特別久
+  const traySlots = $$('.tray-slot', stage);
+  for (const [i, res] of results.entries()) {
+    await nextFrame();
+    deck.append(htmlToEl(`<div class="slot ft-${tierOf(res.r)}" style="z-index:${20 - i};transform:translate(${i * 3}px,${i * -3}px) rotate(${(i - 2) * 1.2}deg)">
+      <div class="face back">${cardBackHTML(i + 1)}</div>
+      <div class="face front">${cardHTML(res.card, res.variant, { eager: true })}<div class="halo"></div>${badgeFor(res)}</div>
+    </div>`));
+  }
+  for (const [i, res] of results.entries()) {
+    await nextFrame();
+    traySlots[i].innerHTML = cardHTML(res.card, res.variant, { eager: true }) + badgeFor(res);
+  }
+  const imgs = Promise.race([
+    Promise.all([preload(results.map((r) => r.card.imageUrl), 2500), warmImages(stage)]),
+    sleep(2500),
+  ]);
+  await done(flyAnim);
+  // 背景已經被遮住了：把後面的頁面藏起來，瀏覽器就不用一直畫它
+  document.body.classList.add('stage-cover');
 
   // ── 2. 蓄力：越抖越大，背後的光越來越亮 ──
   const CHARGE = 1150;
@@ -111,7 +205,7 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
     kf.push({ transform: `translate(${rnd(a)}px,${rnd(a) - k * 10}px) rotate(${rnd(a * 0.45)}deg) scale(${1 + k * 0.07})` });
   }
   const aura = $('.aura', stage);
-  aura.animate([{ opacity: 0, transform: 'scale(.4)' }, { opacity: 0.85, transform: 'scale(1.1)' }], { duration: CHARGE, easing: 'ease-in', fill: 'forwards' });
+  aura.animate([{ opacity: 0, transform: 'scale(.4)' }, { opacity: 0.9, transform: 'scale(1.1)' }], { duration: CHARGE, easing: 'ease-in', fill: 'forwards' });
   await done(shake.animate(kf, { duration: CHARGE, easing: 'ease-in', fill: 'forwards' }));
   await imgs;
 
@@ -129,7 +223,7 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
   ], { duration: 450, easing: 'ease-in-out', fill: 'forwards' });
   for (let i = 0; i <= 4; i++) {
     setTimeout(() => P.burst(tearRect.left + (tearRect.width * i) / 4, tearY, {
-      colors: ['#fff', '#fff8d0', ...colors], count: 8, power: 4, gravity: 0.15, shapes: ['dot', 'rect'], life: 0.6,
+      colors: ['#fff', '#fff8d0', ...colors], count: 6, power: 4, gravity: 0.15, shapes: ['dot', 'rect'], life: 0.6,
     }), i * 70);
   }
   await sleep(330);
@@ -139,16 +233,16 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
   const flashOpacity = tier === 'base' ? 0.55 : 1;
   $('.flash', stage).animate([{ opacity: 0 }, { opacity: flashOpacity, offset: 0.15 }, { opacity: 0 }], { duration: tier === 'base' ? 450 : 900, easing: 'ease-out' });
   if (tier !== 'base') $('.rays', stage).animate([{ opacity: 0, transform: 'scale(.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 700, easing: 'cubic-bezier(.2,1,.3,1)', fill: 'forwards' });
-  aura.classList.add('lit');
+  $('.aura-lit', stage).animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, fill: 'forwards' });
   $('.shaker', stage).animate([
     { transform: 'translate(0,0)' }, { transform: 'translate(-9px,6px)' }, { transform: 'translate(8px,-7px)' },
     { transform: 'translate(-6px,-3px)' }, { transform: 'translate(4px,5px)' }, { transform: 'translate(0,0)' },
   ], { duration: 380 });
-  const big = { base: [50, 11], gold: [110, 15], rainbow: [180, 18] }[tier];
+  const big = { base: [40, 11], gold: [80, 15], rainbow: [120, 18] }[tier];
   P.burst(vw / 2, tearY, { colors, count: big[0], power: big[1], spread: Math.PI * 1.3, gravity: 0.25 });
   if (tier === 'rainbow') {
-    setTimeout(() => P.burst(vw * 0.15, vh * 0.3, { colors, count: 60, power: 12, angle: -Math.PI / 4, spread: 1.2 }), 200);
-    setTimeout(() => P.burst(vw * 0.85, vh * 0.3, { colors, count: 60, power: 12, angle: (-3 * Math.PI) / 4, spread: 1.2 }), 320);
+    setTimeout(() => P.burst(vw * 0.15, vh * 0.3, { colors, count: 40, power: 12, angle: -Math.PI / 4, spread: 1.2 }), 200);
+    setTimeout(() => P.burst(vw * 0.85, vh * 0.3, { colors, count: 40, power: 12, angle: (-3 * Math.PI) / 4, spread: 1.2 }), 320);
   }
   top.animate([
     { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
@@ -159,14 +253,7 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
   await sleep(160);
 
   // ── 4. 卡片從卡包裡冒出來 ──
-  results.forEach((res, i) => {
-    const slot = htmlToEl(`<div class="slot" style="z-index:${20 - i}">
-      <div class="face back">${cardBackHTML(i + 1)}</div>
-      <div class="face front">${cardHTML(res.card, res.variant, { eager: true })}<div class="halo"></div>${badgeFor(res)}</div>
-    </div>`);
-    slot.style.transform = `translate(${i * 3}px,${i * -3}px) rotate(${(i - 2) * 1.2}deg)`;
-    deck.append(slot);
-  });
+  deck.style.opacity = 1;
   const rise = H * 0.42;
   await done(deck.animate([
     { transform: `translateY(${H * 0.3}px) scale(.78)` },
@@ -183,7 +270,6 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
 
   // ── 5. 一張一張翻 ──
   const slots = $$('.slot', deck);
-  const traySlots = $$('.tray-slot', stage);
   let cur = 0, faceUp = false, busy = false, finished = false;
   hint.textContent = '點一下翻牌';
   skip.hidden = false;
@@ -194,9 +280,9 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
     const t = tierOf(res.r);
     sfx.flip();
     await done(back.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(90deg)' }], { duration: fast ? 60 : 150, easing: 'ease-in', fill: 'forwards' }));
-    back.style.visibility = 'hidden';
-    front.style.visibility = 'visible';
-    slot.classList.add('up', `ft-${t}`, `fv-${res.variant}`);
+    back.style.opacity = 0;
+    front.style.opacity = 1;
+    slot.classList.add('up');
     front.animate([{ transform: 'rotateY(-90deg) scale(1.12)' }, { transform: 'rotateY(0deg) scale(1)' }], { duration: fast ? 120 : 280, easing: 'cubic-bezier(.2,1.5,.4,1)' });
     if (fast) return;
     const rc = slot.getBoundingClientRect();
@@ -204,9 +290,9 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
     sfx.reveal(t);
     if (t !== 'base') {
       vibrate(t === 'rainbow' ? [40, 40, 40, 40, 120] : [40, 40, 80]);
-      P.burst(cx, cy, { colors: TIER_COLORS[t], count: t === 'rainbow' ? 120 : 70, power: t === 'rainbow' ? 14 : 11 });
+      P.burst(cx, cy, { colors: TIER_COLORS[t], count: t === 'rainbow' ? 90 : 55, power: t === 'rainbow' ? 14 : 11 });
     } else if (res.variant !== 'normal' || res.isNew) {
-      P.burst(cx, rc.top, { colors: res.variant === 'normal' ? ['#fff', '#ffe9a8', '#cfe3ff'] : TIER_COLORS.gold, count: 26, power: 7, spread: 1.8 });
+      P.burst(cx, rc.top, { colors: res.variant === 'normal' ? ['#fff', '#ffe9a8', '#cfe3ff'] : TIER_COLORS.gold, count: 20, power: 7, spread: 1.8 });
     }
     if (res.dup) { sfx.coin(); onCoins?.(); }
   }
@@ -224,9 +310,7 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
       { transform: `translate(${dx}px,${dy}px) scale(${s}) rotate(${rnd(6)}deg)` },
     ], { duration: fast ? 150 : 340, easing: 'cubic-bezier(.5,0,.3,1)', fill: 'forwards' }));
     slot.remove();
-    const res = results[i];
-    traySlots[i].innerHTML = cardHTML(res.card, res.variant) + badgeFor(res);
-    traySlots[i].classList.add('filled', `ft-${tierOf(res.r)}`);
+    traySlots[i].classList.add('filled');
   }
 
   async function step() {
@@ -286,9 +370,10 @@ async function run(sourceEl, outcome, morePacks, onCoins, resolve) {
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (!act) return;
       sfx.tap();
+      document.body.classList.remove('stage-cover');
       await done(stage.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, fill: 'forwards' }));
       stage.remove();
-      document.body.classList.remove('stage-open');
+      document.body.classList.remove('stage-open', 'stage-cover');
       if (sourceEl) sourceEl.style.visibility = '';
       resolve(act);
     });

@@ -204,22 +204,42 @@ function rollVariant() {
   return 'normal';
 }
 
-function drawCard(pool) {
-  // 先依權重決定稀有度，再從該稀有度的卡裡平均抽一張
+/**
+ * 某個卡池的機率表（抽卡和商店的機率表共用這一份，數字保證一致）。
+ * 每一張的抽法：先依權重決定稀有度，再從該稀有度的卡裡平均抽一張。
+ */
+export function poolOdds(pool) {
   const tiers = new Map();
   for (const c of pool) {
     const r = rarityNum(c.rarity);
     if (!tiers.has(r)) tiers.set(r, []);
     tiers.get(r).push(c);
   }
-  const entries = [...tiers].map(([r, list]) => [rarityWeight(r || 1), list]);
-  let x = Math.random() * entries.reduce((s, [w]) => s + w, 0);
-  for (const [w, list] of entries) {
-    x -= w;
-    if (x < 0) return list[Math.floor(Math.random() * list.length)];
+  const rows = [...tiers].map(([r, cards]) => ({ r, cards, w: rarityWeight(r || 1) })).sort((a, b) => a.r - b.r);
+  const total = rows.reduce((s, x) => s + x.w, 0);
+  const n = RULES.cardsPerPack;
+  for (const row of rows) {
+    row.p = row.w / total;                    // 每一張抽到這個稀有度
+    row.each = row.p / row.cards.length;      // 每一張抽到這個稀有度裡的某一張特定卡
+    row.inPack = 1 - (1 - row.p) ** n;        // 一包裡至少一張這個稀有度
   }
-  const list = entries[entries.length - 1][1];
-  return list[Math.floor(Math.random() * list.length)];
+  const pAtLeast = (min) => rows.filter((x) => x.r >= min).reduce((s, x) => s + x.p, 0);
+  const rainbow = 1 - (1 - pAtLeast(RULES.rainbowTier)) ** n;
+  const goldOrBetter = 1 - (1 - pAtLeast(RULES.goldTier)) ** n;
+  return { rows, rainbowLight: rainbow, goldLight: goldOrBetter - rainbow };
+}
+
+export const packOdds = (setName) => poolOdds(lib.setByName.get(setName)?.cards ?? lib.cards);
+
+function drawCard(pool) {
+  const { rows } = poolOdds(pool);
+  let x = Math.random();
+  for (const row of rows) {
+    x -= row.p;
+    if (x < 0) return row.cards[Math.floor(Math.random() * row.cards.length)];
+  }
+  const last = rows[rows.length - 1].cards;
+  return last[Math.floor(Math.random() * last.length)];
 }
 
 /**

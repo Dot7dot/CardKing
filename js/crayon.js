@@ -63,6 +63,48 @@ function doubleStroke(rng, pathFn, stroke, w1, w2, fill = 'none') {
     `<path d="${pathFn()}" fill="none" stroke="${stroke}" stroke-width="${w2}" stroke-opacity=".75" stroke-linejoin="round"/>`;
 }
 
+
+// ───────── 蠟筆 SVG → 快取圖片 ─────────
+// 蠟筆濾鏡（feTurbulence）很吃效能：直接放在頁面上的話，每次縮放、移動都要重算。
+// 這裡把每種圖形只產生一次成圖片（blob URL），之後瀏覽器只是貼圖，動畫就不會卡。
+const DEFS = `<defs>
+  <filter id="crayon" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4" result="warp"/>
+    <feDisplacementMap in="SourceGraphic" in2="warp" scale="3.2" xChannelSelector="R" yChannelSelector="G" result="wobbly"/>
+    <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="9" result="grain"/>
+    <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -3.2 0 0 0 2.35" result="grainMask"/>
+    <feComposite in="wobbly" in2="grainMask" operator="in"/>
+  </filter>
+  <filter id="crayon-soft" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="2" result="warp"/>
+    <feDisplacementMap in="SourceGraphic" in2="warp" scale="2.5" xChannelSelector="R" yChannelSelector="G" result="wobbly"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="5" result="grain"/>
+    <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -2.2 0 0 0 1.9" result="grainMask"/>
+    <feComposite in="wobbly" in2="grainMask" operator="in"/>
+  </filter>
+  <linearGradient id="g-gold" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#fff3b0"/><stop offset=".25" stop-color="#e9b526"/><stop offset=".5" stop-color="#fff0a0"/>
+    <stop offset=".75" stop-color="#c98a0c"/><stop offset="1" stop-color="#ffe680"/>
+  </linearGradient>
+</defs>`;
+const urlCache = new Map();
+function svgURL(key, build) {
+  let url = urlCache.get(key);
+  if (!url) {
+    url = URL.createObjectURL(new Blob([build()], { type: 'image/svg+xml' }));
+    urlCache.set(key, url);
+  }
+  return url;
+}
+function svgImg(key, cls, viewBox, build, extra = '') {
+  const url = svgURL(key, () => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" ${extra}>${DEFS}${build()}</svg>`);
+  return `<img class="${cls}" src="${url}" alt="" aria-hidden="true" draggable="false" decoding="async">`;
+}
+/** 預先解碼（開包前呼叫，避免翻牌時才算圖） */
+export function warmImages(root) {
+  return Promise.all([...root.querySelectorAll('img')].map((img) => img.decode?.().catch(() => {})));
+}
+
 const STAT_COLORS = { cost: '#3f86e0', attack: '#f2b42c', health: '#e4503f' };
 
 /** 卡牌外框（SVG，250×350 座標） */
@@ -73,7 +115,8 @@ function cardFrameSVG(card, variant, color) {
   const stat = (key, cx, cy) => card[key] == null ? '' :
     doubleStroke(rng, () => roughCircle(rng, cx, cy, 21, 1.3), INK, 3, 1.6, STAT_COLORS[key]) +
     `<path d="M${cx - 12} ${cy - 6} q6 -9 15 -8" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="3.5" stroke-linecap="round"/>`;
-  return `<svg class="card-frame" viewBox="0 0 250 350" aria-hidden="true">
+  const key = `f|${card.id}|${variant}|${color}|${card.cost != null}${card.attack != null}${card.health != null}`;
+  return svgImg(key, 'card-frame', '0 0 250 350', () => `
     <g filter="url(#crayon)">
       ${doubleStroke(rng, () => roughRect(rng, 17, 17, 216, 162, 1.3), INK, 3.2, 1.6)}
       <path d="${roughRect(rng, 13, 186, 224, 36, 1.2)}" fill="${color}" stroke="${INK}" stroke-width="2.6"/>
@@ -85,8 +128,7 @@ function cardFrameSVG(card, variant, color) {
       ${stat('cost', 31, 31)}
       ${stat('attack', 31, 319)}
       ${stat('health', 219, 319)}
-    </g>
-  </svg>`;
+    </g>`);
 }
 
 function starsHTML(r) {
@@ -123,7 +165,7 @@ export function cardBackHTML(seed = 1) {
   const rng = mulberry32(seed * 131 + 7);
   return `<div class="card card-back">
     <div class="card-inner">
-      <svg class="card-frame" viewBox="0 0 250 350" aria-hidden="true">
+      ${svgImg(`b|${seed}`, 'card-frame', '0 0 250 350', () => `
         <g filter="url(#crayon)">
           <path d="${roughRect(rng, 6, 6, 238, 338, 1.5)}" fill="#3b2f5c" stroke="${INK}" stroke-width="5"/>
           ${scribble(rng, 14, 14, 222, 322, 'rgba(255,255,255,.08)', 5, 12)}
@@ -131,8 +173,7 @@ export function cardBackHTML(seed = 1) {
           ${doubleStroke(rng, () => roughCircle(rng, 125, 175, 58, 2), '#f2c84b', 4, 2, '#4d3f78')}
           <path d="M92 196 L98 152 L113 172 L125 145 L137 172 L152 152 L158 196 Z" fill="#f2c84b" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
           <path d="M92 205 H158" stroke="#f2c84b" stroke-width="6" stroke-linecap="round"/>
-        </g>
-      </svg>
+        </g>`)}
       <div class="back-word">CardKing</div>
     </div>
   </div>`;
@@ -149,7 +190,7 @@ export function packHTML(setName, { cls = '' } = {}) {
   for (let x = 192, i = 0; x >= 8; x -= 8, i++) outline += `L${x} ${i % 2 ? 295 : 286}`;
   outline += 'Z';
   return `<div class="pack ${cls}" style="--c:${color}" data-set="${esc(setName)}">
-    <svg class="pack-svg" viewBox="0 0 200 300" aria-hidden="true">
+    ${svgImg(`p|${setName}|${color}`, 'pack-svg', '0 0 200 300', () => `
       <g filter="url(#crayon)">
         <path d="${outline}" fill="${color}" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>
         <rect x="9" y="14" width="182" height="34" fill="rgba(0,0,0,.18)"/>
@@ -159,8 +200,7 @@ export function packHTML(setName, { cls = '' } = {}) {
         ${doubleStroke(rng, () => roughCircle(rng, 100, 128, 44, 1.8), INK, 3.2, 1.6, '#fff8e6')}
         <path d="M74 146 L80 108 L92 126 L100 100 L108 126 L120 108 L126 146 Z" fill="#f2c84b" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
         <path d="${roughRect(rng, 22, 196, 156, 64, 1.3)}" fill="rgba(255,252,240,.92)" stroke="${INK}" stroke-width="2.6"/>
-      </g>
-    </svg>
+      </g>`)}
     <div class="pack-top">CARD PACK</div>
     <div class="pack-name">${esc(setName)}</div>
     <div class="pack-count">卡包 · 5 張</div>
@@ -170,10 +210,9 @@ export function packHTML(setName, { cls = '' } = {}) {
 /** 蠟筆塗色的按鈕／面板底圖（會被拉伸，所以線寬固定） */
 export function crayonBgHTML(seed, fill, stroke = INK) {
   const rng = mulberry32(seed);
-  return `<svg class="crayon-bg" viewBox="0 0 300 100" preserveAspectRatio="none" aria-hidden="true">
+  return svgImg(`g|${seed}|${fill}|${stroke}`, 'crayon-bg', '0 0 300 100', () => `
     <g filter="url(#crayon-soft)">
       <path d="${roughRect(rng, 4, 5, 292, 90, 1.6, 20)}" fill="${fill}" stroke="${stroke}" stroke-width="3" vector-effect="non-scaling-stroke"/>
       <path d="${roughRect(rng, 5, 4, 290, 92, 1.8, 24)}" fill="none" stroke="${stroke}" stroke-opacity=".6" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
-    </g>
-  </svg>`;
+    </g>`, 'preserveAspectRatio="none"');
 }
