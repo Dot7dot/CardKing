@@ -2,6 +2,8 @@
 
 Draw more and collect more!
 
+🎮 **立即遊玩：<https://dot7dot.github.io/CardKing/>**（建議用手機開啟）
+
 一個給手機玩的抽卡收藏遊戲，純 HTML／CSS／JS，直接放在 GitHub Pages 上就能玩。
 卡牌資料即時從 [卡牌製造機（card-uploader）](https://github.com/Dot7dot/card-uploader) 讀取：
 在製造機新增卡牌或系列後，遊戲重新整理就會出現，不用改程式。
