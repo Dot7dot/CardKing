@@ -1,7 +1,7 @@
 // 主程式：畫面切換、金幣、商店、卡包區、圖鑑、我的卡片
 import {
   RULES, VARIANTS, VARIANT_ORDER, lib, save, loadSave, persist, apiBase, loadCachedLibrary, fetchLibrary,
-  giveStarterPacks, buyPack, openPack, ownedCards, unlockedIn, rarityNum, setColor, claimDexRewards,
+  giveStarterPacks, buyPack, openPack, ownedCards, unlockedIn, rarityNum, setColor, claimDexRewards, packOdds, tierOf,
 } from './data.js';
 import { cardHTML, cardBackHTML, packHTML, crayonBgHTML } from './crayon.js';
 import { playOpening } from './opening.js';
@@ -221,7 +221,7 @@ const hashSeed = (s) => [...s].reduce((a, ch) => a * 31 + ch.codePointAt(0), 7) 
 function viewShop() {
   return `<section class="page">
     <h2 class="page-title">商店區</h2>
-    <p class="tip">每包 ${RULES.packPrice} 金幣 · 內含 ${RULES.cardsPerPack} 張卡 · 重複卡自動換 ${RULES.dupCoins} 金幣</p>
+    <p class="tip">每包 ${RULES.packPrice} 金幣 · 內含 ${RULES.cardsPerPack} 張卡 · 重複卡自動換 ${RULES.dupCoins} 金幣 · 點「📊 機率表」看每種卡抽到的機率</p>
     <div class="shop-list">${lib.sets.map((s) => {
       const rs = [...new Set(s.cards.map((c) => rarityNum(c.rarity)))].sort((a, b) => a - b);
       return `<div class="shop-item" style="--c:${s.color}">
@@ -231,11 +231,63 @@ function viewShop() {
           <h3>${esc(s.name)}</h3>
           <p>共 ${s.cards.length} 種卡 · 已收集 ${unlockedIn(s)}</p>
           <p class="shop-rar">${rs.map((r) => `<span class="rt rt-${r >= RULES.rainbowTier ? 'rainbow' : r >= RULES.goldTier ? 'gold' : 'base'}">${r ? '★' + r : '—'}</span>`).join('')}</p>
-          <button class="btn buy ${save.coins < RULES.packPrice ? 'poor' : ''}" data-buy="${esc(s.name)}"><i class="coin-ico sm"></i>${RULES.packPrice} 購買</button>
+          <div class="shop-btns">
+            <button class="btn buy ${save.coins < RULES.packPrice ? 'poor' : ''}" data-buy="${esc(s.name)}"><i class="coin-ico sm"></i>${RULES.packPrice} 購買</button>
+            <button class="btn odds-btn" data-odds="${esc(s.name)}">📊 機率表</button>
+          </div>
         </div>
       </div>`;
     }).join('')}</div>
   </section>`;
+}
+
+// ───────── 機率表 ─────────
+const pct = (p) => `${(p * 100).toFixed(p > 0 && p < 0.01 ? 2 : 1)}%`;
+const tierName = (r) => ({ rainbow: '彩虹光', gold: '黃金光', base: '' })[tierOf(r)];
+
+function showOdds(setName) {
+  const set = lib.setByName.get(setName);
+  if (!set) return;
+  const odds = packOdds(setName);
+  const n = RULES.cardsPerPack;
+  modal(`<div class="odds" style="--c:${set.color}">
+    <div class="odds-head">
+      <div class="odds-pack">${packHTML(setName)}</div>
+      <div>
+        <h2>${esc(setName)} 機率表</h2>
+        <p>一包 ${n} 張，每一張都獨立抽：先依稀有度的機率決定稀有度，再從同稀有度的卡裡平均抽一張。</p>
+      </div>
+    </div>
+    ${odds.goldLight + odds.rainbowLight > 0 ? `<div class="odds-lights">
+      ${odds.goldLight > 0 ? `<span class="ol ol-gold">開包發出黃金光 <b>${pct(odds.goldLight)}</b></span>` : ''}
+      ${odds.rainbowLight > 0 ? `<span class="ol ol-rainbow">開包發出彩虹光 <b>${pct(odds.rainbowLight)}</b></span>` : ''}
+    </div>` : ''}
+    <h3>稀有度</h3>
+    <table class="odds-table">
+      <thead><tr><th>稀有度</th><th>種類</th><th>每張抽中</th><th>一包至少一張</th></tr></thead>
+      <tbody>${odds.rows.map((row) => `<tr class="tr-${tierOf(row.r)}">
+        <td><span class="rt rt-${tierOf(row.r)}">${row.r ? '★' + row.r : '—'}</span>${tierName(row.r) ? `<small>${tierName(row.r)}</small>` : ''}</td>
+        <td>${row.cards.length}</td>
+        <td><b>${pct(row.p)}</b></td>
+        <td>${pct(row.inPack)}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+    <h3>每一種卡</h3>
+    <p class="odds-note">每一張抽中某一種卡的機率（還沒收集到的卡先保密）</p>
+    <div class="odds-cards">${odds.rows.map((row) => row.cards.map((c) => {
+      const got = !!save.col[c.id];
+      return `<div class="oc ${got ? 'got' : ''}"><span class="rt rt-${tierOf(row.r)}">${row.r ? '★' + row.r : '—'}</span>
+        <span class="oc-name">${got ? esc(c.name) : '？？？'}</span><b>${pct(row.each)}</b></div>`;
+    }).join('')).join('')}</div>
+    <h3>卡面型態</h3>
+    <p class="odds-note">每一張卡另外決定型態，跟稀有度無關</p>
+    <table class="odds-table">
+      <thead><tr><th>型態</th><th>機率</th></tr></thead>
+      <tbody>${VARIANT_ORDER.map((v) => `<tr><td>${VARIANTS[v].label}</td><td><b>${pct(VARIANTS[v].chance)}</b></td></tr>`).join('')}</tbody>
+    </table>
+    <p class="odds-note">已經有同一張卡、同一種型態時，會自動換成 ${RULES.dupCoins} 金幣。</p>
+    <button class="btn primary" data-close>知道了</button>
+  </div>`, { cls: 'odds-modal' });
 }
 
 const VIEWS = { home: viewHome, cards: viewCards, packs: viewPacks, dex: viewDex, shop: viewShop };
@@ -296,8 +348,8 @@ function showCard(id) {
     const c = $('.card', holder);
     c.classList.add('tilting');
     c.style.transform = `rotateY(${(x - 0.5) * 26}deg) rotateX(${(0.5 - y) * 26}deg)`;
-    c.style.setProperty('--mx', `${x * 100}%`);
-    c.style.setProperty('--my', `${y * 100}%`);
+    c.style.setProperty('--tx', (x - 0.5).toFixed(3));
+    c.style.setProperty('--ty', (y - 0.5).toFixed(3));
   };
   holder.addEventListener('pointermove', tilt);
   holder.addEventListener('pointerdown', (e) => { holder.setPointerCapture?.(e.pointerId); tilt(e); });
@@ -352,6 +404,8 @@ document.addEventListener('click', (e) => {
   if (c) { sfx.flip(); showCard(Number(c.dataset.card)); return; }
   const o = t.closest('[data-open]');
   if (o) { openFromSet(o.dataset.open, $('.pack', o)); return; }
+  const od = t.closest('[data-odds]');
+  if (od) { sfx.tap(); showOdds(od.dataset.odds); return; }
   const b = t.closest('[data-buy]');
   if (b) {
     if (!buyPack(b.dataset.buy)) {
