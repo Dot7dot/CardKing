@@ -107,7 +107,7 @@ export function warmImages(root) {
 
 const STAT_COLORS = { cost: '#3f86e0', attack: '#f2b42c', health: '#e4503f' };
 
-/** 卡牌外框（SVG，250×350 座標） */
+/** 卡牌外框（SVG，250×350 座標）：上方 198×198 正方形卡圖，下方名稱、類型、效果 */
 function cardFrameSVG(card, variant, color) {
   const rng = mulberry32(card.id * 7919 + 17);
   const gold = variant === 'gold';
@@ -118,10 +118,10 @@ function cardFrameSVG(card, variant, color) {
   const key = `f|${card.id}|${variant}|${color}|${card.cost != null}${card.attack != null}${card.health != null}`;
   return svgImg(key, 'card-frame', '0 0 250 350', () => `
     <g filter="url(#crayon)">
-      ${doubleStroke(rng, () => roughRect(rng, 17, 17, 216, 162, 1.3), INK, 3.2, 1.6)}
-      <path d="${roughRect(rng, 13, 186, 224, 36, 1.2)}" fill="${color}" stroke="${INK}" stroke-width="2.6"/>
-      ${scribble(rng, 18, 190, 214, 28, 'rgba(255,255,255,.28)', 3, 8)}
-      ${scribble(rng, 30, 236, 190, 70, 'rgba(120,100,70,.07)', 6, 14)}
+      ${doubleStroke(rng, () => roughRect(rng, 26, 16, 198, 198, 1.3), INK, 3.2, 1.6)}
+      <path d="${roughRect(rng, 13, 220, 224, 32, 1.2)}" fill="${color}" stroke="${INK}" stroke-width="2.6"/>
+      ${scribble(rng, 18, 224, 214, 24, 'rgba(255,255,255,.28)', 3, 8)}
+      ${scribble(rng, 56, 266, 138, 48, 'rgba(120,100,70,.07)', 6, 14)}
       ${doubleStroke(rng, () => roughRect(rng, 6, 6, 238, 338, 1.6), frame, gold ? 10 : 5, gold ? 4 : 2.4)}
       ${gold ? `<path d="${roughRect(rng, 12, 12, 226, 326, 1)}" fill="none" stroke="url(#g-gold)" stroke-width="2.5"/>
         ${[[8, 8], [242, 8], [8, 342], [242, 342]].map(([x, y]) => `<path d="M${x} ${y - 9}L${x + 9} ${y}L${x} ${y + 9}L${x - 9} ${y}Z" fill="#fff4b8" stroke="#b07a06" stroke-width="2"/>`).join('')}` : ''}
