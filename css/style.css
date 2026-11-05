@@ -433,12 +433,14 @@ body[data-route='home'] .back { visibility: hidden; }
   box-shadow: 0 2px 0 rgba(45, 42, 50, .2), 0 6px 14px rgba(40, 30, 20, .2);
 }
 .card-frame { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
-.card-art { position: absolute; left: 7.2%; top: 5.2%; width: 85.6%; height: 45.6%; overflow: hidden; border-radius: 2px; background: #e9e0cc; }
+/* 正方形卡圖：寬 198/250、高 198/350（卡片座標 26,16 起） */
+.card-art { position: absolute; left: 10.4%; top: 4.57%; width: 79.2%; height: 56.57%; overflow: hidden; border-radius: 2px; background: #e9e0cc; }
 .card-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .noart { width: 100%; height: 100%; display: grid; place-items: center; font-size: 30cqw; color: #fff; background: hsl(var(--h) 55% 62%); text-shadow: 2px 2px 0 rgba(0, 0, 0, .2); }
 .card-stars {
   position: absolute;
-  top: 3.6%; right: 3.6%;
+  top: .6%; left: 50%; transform: translateX(-50%); /* 放在上邊框中間，不擋到正方形卡圖 */
+  white-space: nowrap;
   padding: .6cqw 2.4cqw;
   border-radius: var(--hand);
   border: .9cqw solid var(--ink);
@@ -457,7 +459,7 @@ body[data-route='home'] .back { visibility: hidden; }
 }
 .card-name {
   position: absolute;
-  top: 53.3%; left: 7%; right: 7%; height: 10.2%;
+  top: 62.86%; left: 7%; right: 7%; height: 9.14%;
   display: flex; align-items: center; justify-content: center;
   font-size: 8.4cqw;
   font-weight: 700;
@@ -466,16 +468,16 @@ body[data-route='home'] .back { visibility: hidden; }
   overflow: hidden;
   text-shadow: .5cqw .5cqw 0 var(--ink), -.4cqw -.4cqw 0 var(--ink), .4cqw -.4cqw 0 var(--ink), -.4cqw .4cqw 0 var(--ink);
 }
-.card-sub { position: absolute; top: 64.6%; left: 8%; right: 8%; font-size: 5cqw; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-sub { position: absolute; top: 72.6%; left: 8%; right: 8%; font-size: 5cqw; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-desc {
   position: absolute;
-  top: 71%; left: 18%; right: 18%; bottom: 13%;
-  font-size: 5cqw;
-  line-height: 1.3;
+  top: 77.4%; left: 21%; right: 21%; bottom: 11%;
+  font-size: 4.4cqw;
+  line-height: 1.22;
   color: var(--ink);
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 .stat {
